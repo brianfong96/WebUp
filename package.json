@@ -1,0 +1,19 @@
+{
+  "name": "webup",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace apps/pwa-interface run dev",
+    "build": "npm --workspace apps/pwa-interface run build",
+    "lint": "npm --workspace apps/pwa-interface run lint",
+    "test:unit": "pytest tests/unit",
+    "test:sanity": "pytest tests/sanity",
+    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.1"
+  }
+}

@@ -1,0 +1,152 @@
+services:
+  valkey:
+    image: valkey/valkey:8
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-webup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-webup}
+      POSTGRES_DB: ${POSTGRES_DB:-webup}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./storage/postgres-data:/var/lib/postgresql/data
+      - ./config/sql/postgres-init.sql:/docker-entrypoint-initdb.d/postgres-init.sql:ro
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./storage/clickhouse-data:/var/lib/clickhouse
+      - ./config/sql/clickhouse-init.sql:/docker-entrypoint-initdb.d/clickhouse-init.sql:ro
+
+  minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio123}
+    ports:
+      - "9001:9001"
+      - "9002:9000"
+
+  ollama:
+    image: ollama/ollama:0.11.11
+    ports:
+      - "11434:11434"
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    depends_on:
+      - postgres
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-webup}
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-webup}
+      POSTGRES_SEEDS: postgres
+    ports:
+      - "7233:7233"
+
+  temporal-ui:
+    image: temporalio/ui:2.32.0
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    ports:
+      - "8080:8080"
+
+  workflow-engine:
+    build:
+      context: .
+      dockerfile: services/workflow-engine/Dockerfile
+    depends_on:
+      - temporal
+      - valkey
+      - postgres
+    restart: unless-stopped
+    environment:
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+      VALKEY_URL: ${VALKEY_URL:-redis://valkey:6379/0}
+      PIPELINE_STREAM_START_ID: ${PIPELINE_STREAM_START_ID:-$$}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-webup}:${POSTGRES_PASSWORD:-webup}@postgres:5432/${POSTGRES_DB:-webup}
+
+  workflow-trigger:
+    build:
+      context: .
+      dockerfile: services/workflow-engine/Dockerfile
+    depends_on:
+      - temporal
+      - valkey
+    restart: unless-stopped
+    command: ["python", "-m", "workflow_engine.trigger_consumer"]
+    environment:
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+      VALKEY_URL: ${VALKEY_URL:-redis://valkey:6379/0}
+
+  log-cleanup:
+    build:
+      context: .
+      dockerfile: services/workflow-engine/Dockerfile
+    depends_on:
+      - valkey
+      - postgres
+      - clickhouse
+    restart: unless-stopped
+    command: ["python", "-m", "workflow_engine.log_cleanup"]
+    environment:
+      VALKEY_URL: ${VALKEY_URL:-redis://valkey:6379/0}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-webup}:${POSTGRES_PASSWORD:-webup}@postgres:5432/${POSTGRES_DB:-webup}
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: 8123
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-webup}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-14}
+      CLEANUP_INTERVAL_SECONDS: ${CLEANUP_INTERVAL_SECONDS:-86400}
+
+  ingestor-fleet:
+    build:
+      context: .
+      dockerfile: services/ingestor-fleet/Dockerfile
+    depends_on:
+      - valkey
+    restart: unless-stopped
+    environment:
+      VALKEY_URL: ${VALKEY_URL:-redis://valkey:6379/0}
+
+  ai-analyzer:
+    build:
+      context: .
+      dockerfile: services/ai-analyzer/Dockerfile
+    depends_on:
+      - ollama
+      - valkey
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+      ANALYZER_TIMEOUT_SECONDS: ${ANALYZER_TIMEOUT_SECONDS:-180}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://ollama:11434/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-dev-key}
+      VALKEY_URL: ${VALKEY_URL:-redis://valkey:6379/0}
+    ports:
+      - "8010:8010"
+
+  pwa-interface:
+    build:
+      context: .
+      dockerfile: apps/pwa-interface/Dockerfile
+    depends_on:
+      - valkey
+      - workflow-engine
+      - ai-analyzer
+    restart: unless-stopped
+    environment:
+      VALKEY_URL: ${VALKEY_URL:-redis://valkey:6379/0}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:3000}
+    ports:
+      - "3000:3000"

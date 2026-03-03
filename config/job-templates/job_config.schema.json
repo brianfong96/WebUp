@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webup.local/job-config.schema.json",
+  "title": "JobConfig",
+  "type": "object",
+  "required": [
+    "job_id",
+    "ingestor_plugin",
+    "analyzer_plugin",
+    "pipeline_settings",
+    "storage_policy"
+  ],
+  "properties": {
+    "job_id": { "type": "string", "minLength": 3 },
+    "ingestor_plugin": { "type": "string", "minLength": 1 },
+    "analyzer_plugin": {
+      "type": "object",
+      "required": ["provider", "model", "temperature", "prompt_template_id"],
+      "properties": {
+        "provider": { "type": "string", "enum": ["ollama", "openai"] },
+        "model": { "type": "string", "minLength": 1 },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "prompt_template_id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "pipeline_settings": {
+      "type": "object",
+      "required": ["max_parallelism", "max_retries", "cron"],
+      "properties": {
+        "max_parallelism": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "max_retries": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "cron": { "type": "string", "minLength": 3 }
+      },
+      "additionalProperties": false
+    },
+    "storage_policy": {
+      "type": "object",
+      "required": ["raw_retention_days", "analyzed_retention_days", "persist_artifacts"],
+      "properties": {
+        "raw_retention_days": { "type": "integer", "minimum": 1 },
+        "analyzed_retention_days": { "type": "integer", "minimum": 1 },
+        "persist_artifacts": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

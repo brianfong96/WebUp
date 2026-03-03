@@ -1,0 +1,9 @@
+{
+  "name": "WebUp Pipeline",
+  "short_name": "WebUp",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a1224",
+  "theme_color": "#0a1224",
+  "icons": []
+}
